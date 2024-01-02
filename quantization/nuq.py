@@ -37,6 +37,36 @@ parser.add_argument(
     help='path to dump the output'
 )
 
+def do_kmeans_plus(n_clusters: int, random_state: int, max_iter: int, X: torch.Tensor, sample_weight: torch.Tensor):
+    DEV = torch.device('cuda:0')
+    X = X.to(DEV)
+    sample_weight = sample_weight.to(DEV)
+    n_samples, n_features = X.shape
+    torch.manual_seed(random_state)
+    
+    def dist(x, y):
+        return (x - y).pow(2).sum(-1)
+    
+    # Kmeans++ Initialization
+    centroids = torch.zeros((n_clusters, n_features)).to(DEV)
+    centroids[0, :] = X[torch.randint(0, n_samples - 1, (1, 1), device=DEV), :]
+    for i in range(1, n_clusters):
+        next_centroid = torch.argmax(torch.min(dist(X.view(n_samples, 1, n_features), centroids[0:i, :].view(1, i, n_features)), dim=-1).values.view(n_samples)).view(1)
+        centroids[i, :] = X[next_centroid, :]
+    
+    # Kmeans Algorithm
+    for i in range(max_iter):
+        assignment = torch.argmin(dist(X.view(n_samples, 1, n_features), centroids.view(1, n_clusters, n_features)), dim=-1).view(n_samples)
+        for j in range(n_clusters):
+            temp_weight = sample_weight[assignment == j]
+            cluster_j = X[assignment == j, :] * temp_weight[:, None]
+            if cluster_j.shape[0] > 0:
+                centroids[j, :] = cluster_j.mean(0)
+                centroids[j, :] /= torch.sum(temp_weight[:, None]) 
+    
+    assignments = torch.argmin(dist(X.view(n_samples, 1, n_features), centroids.view(1, n_clusters, n_features)), dim=-1).view(n_samples)
+    return assignments.cpu().numpy(), centroids.cpu().numpy()
+
 if __name__ == "__main__":
     args = parser.parse_args()
 
@@ -86,11 +116,11 @@ if __name__ == "__main__":
         config_per_layer = {}
 
         for name in tqdm(get_module_names(model_type)):
-            g = gradient_layer[name].float().numpy()
+            g = gradient_layer[name].float()
 
             config_per_row = []
             module_weight = model_layer[name]
-            _weights_np = module_weight.float().numpy()
+            _weights_np = module_weight.float()
 
             n_cluster = 2 ** args.bit
 
@@ -104,8 +134,8 @@ if __name__ == "__main__":
                 sample_weight = g[i, :]
                 sample_weight = sample_weight * weight_mask
 
-                if np.sum(sample_weight) == 0:
-                    sample_weight = np.ones_like(sample_weight)
+                if np.sum(sample_weight.numpy()) == 0:
+                    sample_weight = torch.from_numpy(np.ones_like(sample_weight))
 
                 kmeans = KMeans(
                     n_clusters=n_cluster, 
@@ -116,10 +146,26 @@ if __name__ == "__main__":
                     weights_np, 
                     sample_weight=sample_weight,
                 )
+
                 config_per_group.append(
                     (kmeans.cluster_centers_.reshape(-1), np.cast['byte'](kmeans.labels_))
                 )
+
                 config_per_row.append(config_per_group)
+
+                # assignments, centroids = do_kmeans_plus(
+                #     n_clusters = n_cluster,
+                #     random_state = 0,
+                #     max_iter = 50,
+                #     X = weights_np,
+                #     sample_weight = sample_weight
+                # )
+                # print(assignments)
+
+                # config_per_group.append(
+                #     (centroids.reshape(-1), np.cast['byte'](assignments))
+                # )
+                # config_per_row.append(config_per_group)
 
             config_per_layer[name] = config_per_row
 
@@ -127,4 +173,3 @@ if __name__ == "__main__":
         with open(lut_file_name, "wb") as f:
             print(f"Saving layer lut to {lut_folder}/l{l}.pkl")
             pickle.dump(config_per_layer, f)
-
