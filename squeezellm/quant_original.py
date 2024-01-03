@@ -47,9 +47,9 @@ class QuantLinearLUT(nn.Module):
             self.include_bias = False
             self.bias = None
         # Note that it is 2^self.bits, not 2 * self.bits
-        # For each column (there are infeature columns), there are k=2^self.bits cluster centers
-        # Basically, this stores the cluster centers for each column!!
-        self.register_buffer('lookup_table', torch.zeros((infeatures, 2**self.bits), dtype=torch.float32))
+        # For each row (there are outfeature rows), there are k=2^self.bits cluster centers
+        # Basically, this stores the cluster centers for each row!!
+        self.register_buffer('lookup_table', torch.zeros((outfeatures, 2**self.bits), dtype=torch.float32))
 
         self.include_sparse = include_sparse
         self.numvals = numvals
@@ -82,13 +82,12 @@ class QuantLinearLUT(nn.Module):
 
         #get zero mapping
         num_channels = len(lut)
-        # lut is array of (column LUT, label) --> length is N!!
+        # lut is array of (row LUT, label) --> length is M!!
         for channel in range(num_channels):
             centroid, indices = lut[channel][0] # last 0 is for group 0
-            intweight[:, channel] = torch.from_numpy(indices)
+            intweight[channel] = torch.from_numpy(indices)
             self.lookup_table[channel] = torch.from_numpy(centroid)
-            # now, intweight stores the indices for each column
-            # & self.lookup_table stores the cluster centroids for each column
+            # now, intweight stores the indices for each row & self.lookup_table stores the cluster centroids for each row
 
             if include_sparse:
                 zero_mapping = round_to_nearest_pole_sim(torch.zeros(1), centroid)

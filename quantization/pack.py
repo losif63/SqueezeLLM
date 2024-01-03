@@ -26,6 +26,7 @@ def llama_sequential(model, folder, include_sparse, updated_format):
             # each of which is a list of #group lists, (here, it's always 1)
             # and each of them are a tuple (centroids, indices)
             lut_layer = pickle.load(f)
+            # lut_layer is dictionary from nuq.py
 
         if not updated_format and include_sparse:
             outlier_list_layer = outlier_list[i]
@@ -59,6 +60,8 @@ def llama_sequential(model, folder, include_sparse, updated_format):
 
         for s in sequential_lut:
             lut = lut_layer[s]
+            # lut_layer is a dictionary
+            # lut is a list of (LUT, labels)!!
             if not updated_format and include_sparse:
                 outliers = outlier_list_layer[s]
             elif include_sparse:
@@ -68,6 +71,8 @@ def llama_sequential(model, folder, include_sparse, updated_format):
                 outliers = None
             name = sequential_lut_real_name[s]
             quantizers['model.layers.%d.%s' % (i, name)] = [lut,outliers]
+            # lut, the list of (LUT, lables) is stored in quantizers dictionary!!
+            # outliers is None because no include_sparse yet
 
     return quantizers
 
