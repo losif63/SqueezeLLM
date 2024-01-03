@@ -757,6 +757,10 @@ __global__ void VecQuant3MatMulKernelNUQPerChannel(
   __shared__ float deq2[8][BLOCKWIDTH];
   int off = threadIdx.x;
   int column_offset = col * 8;
+  // LUT of each row (in original matrix) are stored into 1D array
+  // This is 3-bit system, so 8 float values for each LUT
+  // Therefore, the column offset is 8 * column!
+  // Note that the matrix is transposed, so row -> column
   for (int val = 0; val < 8; val += 1) {
     int lut_index = column_offset + val;
     deq2[val][off] = lookup_table[lut_index];
