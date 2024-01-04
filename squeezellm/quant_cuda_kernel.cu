@@ -747,7 +747,9 @@ __global__ void VecQuant3MatMulKernelNUQPerChannel(
     int width
 ) {
 
+  // BLOCKHEIGHT3 = 12 = BLOCKWIDTH / 32 * 3
   int row = BLOCKHEIGHT3 * blockIdx.x;
+  // BLOCKWIDTH = 128
   int col = BLOCKWIDTH * blockIdx.y + threadIdx.x;
 
   __shared__ float blockvec[BLOCKWIDTH];
@@ -756,15 +758,15 @@ __global__ void VecQuant3MatMulKernelNUQPerChannel(
   //Modified dequant block
   __shared__ float deq2[8][BLOCKWIDTH];
   int off = threadIdx.x;
-  int column_offset = col * 8;
-  // LUT of each row (in original matrix) are stored into 1D array
-  // This is 3-bit system, so 8 float values for each LUT
-  // Therefore, the column offset is 8 * column!
-  // Note that the matrix is transposed, so row -> column
+  int row_offset = (((row / 3) * 32) + off) * 8;
+  // Current row number is (row / 3) * 32
+
   for (int val = 0; val < 8; val += 1) {
-    int lut_index = column_offset + val;
+    int lut_index = row_offset + val;
     deq2[val][off] = lookup_table[lut_index];
   }
+  // There are BLOCKWIDTH (128) columns in deq2
+  // Each column are the centroid values needed for each element in the BLOCKWIDTH elements of blockvec
 
   int i = width * row + col;
   int k = 0;
@@ -777,53 +779,56 @@ __global__ void VecQuant3MatMulKernelNUQPerChannel(
 
   __syncthreads();
 
+  // The following calculation procedure always processes three mat[i] values at once
+  // Therefore, we can always be sure that the first mat[i] always is synchronized with the 3-bit granularity!!
+  // 32 bits * 3 = 96 bits --> basically, calculating 32 elements at a time!!
   while (k < BLOCKWIDTH) {
     tmp1 = as_unsigned(mat[i]);
 
-    res += deq2[(tmp1 >>  0) & 0x7][off] * blockvec[k + 0];
-    res += deq2[(tmp1 >>  3) & 0x7][off] * blockvec[k + 1];
-    res += deq2[(tmp1 >>  6) & 0x7][off] * blockvec[k + 2];
-    res += deq2[(tmp1 >>  9) & 0x7][off] * blockvec[k + 3];
-    res += deq2[(tmp1 >>  12) & 0x7][off] * blockvec[k + 4];
-    res += deq2[(tmp1 >>  15) & 0x7][off] * blockvec[k + 5];
-    res += deq2[(tmp1 >>  18) & 0x7][off] * blockvec[k + 6];
-    res += deq2[(tmp1 >>  21) & 0x7][off] * blockvec[k + 7];
-    res += deq2[(tmp1 >>  24) & 0x7][off] * blockvec[k + 8];
-    res += deq2[(tmp1 >>  27) & 0x7][off] * blockvec[k + 9];
+    res += deq2[(tmp1 >>  0) & 0x7][k + 0] * blockvec[k + 0];
+    res += deq2[(tmp1 >>  3) & 0x7][k + 1] * blockvec[k + 1];
+    res += deq2[(tmp1 >>  6) & 0x7][k + 2] * blockvec[k + 2];
+    res += deq2[(tmp1 >>  9) & 0x7][k + 3] * blockvec[k + 3];
+    res += deq2[(tmp1 >>  12) & 0x7][k + 4] * blockvec[k + 4];
+    res += deq2[(tmp1 >>  15) & 0x7][k + 5] * blockvec[k + 5];
+    res += deq2[(tmp1 >>  18) & 0x7][k + 6] * blockvec[k + 6];
+    res += deq2[(tmp1 >>  21) & 0x7][k + 7] * blockvec[k + 7];
+    res += deq2[(tmp1 >>  24) & 0x7][k + 8] * blockvec[k + 8];
+    res += deq2[(tmp1 >>  27) & 0x7][k + 9] * blockvec[k + 9];
 
     i += width;
     tmp2 = as_unsigned(mat[i]);
     tmp = (tmp1 >> 30) | ((tmp2 << 2) & 0x4);
     tmp2 >>= 1;
-    res += deq2[(tmp >>  0) & 0x7][off] * blockvec[k + 10];
+    res += deq2[(tmp >>  0) & 0x7][k + 10] * blockvec[k + 10];
     k += 11;
-    res += deq2[(tmp2 >>  0) & 0x7][off] * blockvec[k + 0];
-    res += deq2[(tmp2 >>  3) & 0x7][off] * blockvec[k + 1];
-    res += deq2[(tmp2 >>  6) & 0x7][off] * blockvec[k + 2];
-    res += deq2[(tmp2 >>  9) & 0x7][off] * blockvec[k + 3];
-    res += deq2[(tmp2 >>  12) & 0x7][off] * blockvec[k + 4];
-    res += deq2[(tmp2 >>  15) & 0x7][off] * blockvec[k + 5];
-    res += deq2[(tmp2 >>  18) & 0x7][off] * blockvec[k + 6];
-    res += deq2[(tmp2 >>  21) & 0x7][off] * blockvec[k + 7];
-    res += deq2[(tmp2 >>  24) & 0x7][off] * blockvec[k + 8];
-    res += deq2[(tmp2 >>  27) & 0x7][off] * blockvec[k + 9];
+    res += deq2[(tmp2 >>  0) & 0x7][k + 0] * blockvec[k + 0];
+    res += deq2[(tmp2 >>  3) & 0x7][k + 1] * blockvec[k + 1];
+    res += deq2[(tmp2 >>  6) & 0x7][k + 2] * blockvec[k + 2];
+    res += deq2[(tmp2 >>  9) & 0x7][k + 3] * blockvec[k + 3];
+    res += deq2[(tmp2 >>  12) & 0x7][k + 4] * blockvec[k + 4];
+    res += deq2[(tmp2 >>  15) & 0x7][k + 5] * blockvec[k + 5];
+    res += deq2[(tmp2 >>  18) & 0x7][k + 6] * blockvec[k + 6];
+    res += deq2[(tmp2 >>  21) & 0x7][k + 7] * blockvec[k + 7];
+    res += deq2[(tmp2 >>  24) & 0x7][k + 8] * blockvec[k + 8];
+    res += deq2[(tmp2 >>  27) & 0x7][k + 9] * blockvec[k + 9];
 
     i += width;
     tmp1 = as_unsigned(mat[i]);
     tmp = (tmp2 >> 30) | ((tmp1 << 1) & 0x6);
     tmp1 >>= 2;
-    res += deq2[(tmp >>  0) & 0x7][off] * blockvec[k + 10];
+    res += deq2[(tmp >>  0) & 0x7][k + 10] * blockvec[k + 10];
     k += 11;
-    res += deq2[(tmp1 >>  0) & 0x7][off] * blockvec[k + 0];
-    res += deq2[(tmp1 >>  3) & 0x7][off] * blockvec[k + 1];
-    res += deq2[(tmp1 >>  6) & 0x7][off] * blockvec[k + 2];
-    res += deq2[(tmp1 >>  9) & 0x7][off] * blockvec[k + 3];
-    res += deq2[(tmp1 >>  12) & 0x7][off] * blockvec[k + 4];
-    res += deq2[(tmp1 >>  15) & 0x7][off] * blockvec[k + 5];
-    res += deq2[(tmp1 >>  18) & 0x7][off] * blockvec[k + 6];
-    res += deq2[(tmp1 >>  21) & 0x7][off] * blockvec[k + 7];
-    res += deq2[(tmp1 >>  24) & 0x7][off] * blockvec[k + 8];
-    res += deq2[(tmp1 >>  27) & 0x7][off] * blockvec[k + 9];
+    res += deq2[(tmp1 >>  0) & 0x7][k + 0] * blockvec[k + 0];
+    res += deq2[(tmp1 >>  3) & 0x7][k + 1] * blockvec[k + 1];
+    res += deq2[(tmp1 >>  6) & 0x7][k + 2] * blockvec[k + 2];
+    res += deq2[(tmp1 >>  9) & 0x7][k + 3] * blockvec[k + 3];
+    res += deq2[(tmp1 >>  12) & 0x7][k + 4] * blockvec[k + 4];
+    res += deq2[(tmp1 >>  15) & 0x7][k + 5] * blockvec[k + 5];
+    res += deq2[(tmp1 >>  18) & 0x7][k + 6] * blockvec[k + 6];
+    res += deq2[(tmp1 >>  21) & 0x7][k + 7] * blockvec[k + 7];
+    res += deq2[(tmp1 >>  24) & 0x7][k + 8] * blockvec[k + 8];
+    res += deq2[(tmp1 >>  27) & 0x7][k + 9] * blockvec[k + 9];
     i += width;
     k += 10;
   }
@@ -841,6 +846,7 @@ __global__ void VecQuant4MatMulKernelNUQPerChannel(
     int width
 ) {
 
+  // BLOCKHEIGHT4 = 16 = BLOCKWIDTH / 32 * 4
   int row = BLOCKHEIGHT4 * blockIdx.x;
   int col =  BLOCKWIDTH * blockIdx.y + threadIdx.x;
 
@@ -850,9 +856,9 @@ __global__ void VecQuant4MatMulKernelNUQPerChannel(
   //Modified dequant block
   __shared__ float deq2[16][BLOCKWIDTH];
   int off = threadIdx.x;
-  int column_offset = col * 16;
+  int row_offset = (((row / 4) * 32) + off) * 16;
   for (int val = 0; val < 16; val += 1) {
-    int lut_index = column_offset + val;
+    int lut_index = row_offset + val;
     deq2[val][off] = lookup_table[lut_index];
   }
 
@@ -867,14 +873,14 @@ __global__ void VecQuant4MatMulKernelNUQPerChannel(
   while (k < BLOCKWIDTH) {
     tmp = as_unsigned(mat[i]);
 
-    res += deq2[(tmp >>  0) & 0xf][off] * blockvec[k + 0];
-    res += deq2[(tmp >>  4) & 0xf][off] * blockvec[k + 1];
-    res += deq2[(tmp >>  8) & 0xf][off] * blockvec[k + 2];
-    res += deq2[(tmp >>  12) & 0xf][off] * blockvec[k + 3];
-    res += deq2[(tmp >>  16) & 0xf][off] * blockvec[k + 4];
-    res += deq2[(tmp >>  20) & 0xf][off] * blockvec[k + 5];
-    res += deq2[(tmp >>  24) & 0xf][off] * blockvec[k + 6];
-    res += deq2[(tmp >>  28) & 0xf][off] * blockvec[k + 7];
+    res += deq2[(tmp >>  0) & 0xf][k + 0] * blockvec[k + 0];
+    res += deq2[(tmp >>  4) & 0xf][k + 1] * blockvec[k + 1];
+    res += deq2[(tmp >>  8) & 0xf][k + 2] * blockvec[k + 2];
+    res += deq2[(tmp >>  12) & 0xf][k + 3] * blockvec[k + 3];
+    res += deq2[(tmp >>  16) & 0xf][k + 4] * blockvec[k + 4];
+    res += deq2[(tmp >>  20) & 0xf][k + 5] * blockvec[k + 5];
+    res += deq2[(tmp >>  24) & 0xf][k + 6] * blockvec[k + 6];
+    res += deq2[(tmp >>  28) & 0xf][k + 7] * blockvec[k + 7];
 
     i += width;
     k += 8;
@@ -903,9 +909,10 @@ __global__ void VecQuant3MatMulKernelNUQPerChannelBatched(
 
   __shared__ float deq2[8][BLOCKWIDTH];
   int off = threadIdx.x;
-  int column_offset = col * 8;
+  int row_offset = (((row / 3) * 32) + off) * 8;
+  // Current row number is (row / 3) * 32
   for (int val = 0; val < 8; val += 1) {
-    int lut_index = column_offset + val;
+    int lut_index = row_offset + val;
     deq2[val][off] = lookup_table[lut_index];
   }
 
@@ -930,50 +937,50 @@ __global__ void VecQuant3MatMulKernelNUQPerChannelBatched(
     while (k < BLOCKWIDTH) {
       tmp1 = as_unsigned(mat[i]);
 
-      res += deq2[(tmp1 >>  0) & 0x7][off] * blockvec[k + 0];
-      res += deq2[(tmp1 >>  3) & 0x7][off] * blockvec[k + 1];
-      res += deq2[(tmp1 >>  6) & 0x7][off] * blockvec[k + 2];
-      res += deq2[(tmp1 >>  9) & 0x7][off] * blockvec[k + 3];
-      res += deq2[(tmp1 >>  12) & 0x7][off] * blockvec[k + 4];
-      res += deq2[(tmp1 >>  15) & 0x7][off] * blockvec[k + 5];
-      res += deq2[(tmp1 >>  18) & 0x7][off] * blockvec[k + 6];
-      res += deq2[(tmp1 >>  21) & 0x7][off] * blockvec[k + 7];
-      res += deq2[(tmp1 >>  24) & 0x7][off] * blockvec[k + 8];
-      res += deq2[(tmp1 >>  27) & 0x7][off] * blockvec[k + 9];
+      res += deq2[(tmp1 >>  0) & 0x7][k + 0] * blockvec[k + 0];
+      res += deq2[(tmp1 >>  3) & 0x7][k + 1] * blockvec[k + 1];
+      res += deq2[(tmp1 >>  6) & 0x7][k + 2] * blockvec[k + 2];
+      res += deq2[(tmp1 >>  9) & 0x7][k + 3] * blockvec[k + 3];
+      res += deq2[(tmp1 >>  12) & 0x7][k + 4] * blockvec[k + 4];
+      res += deq2[(tmp1 >>  15) & 0x7][k + 5] * blockvec[k + 5];
+      res += deq2[(tmp1 >>  18) & 0x7][k + 6] * blockvec[k + 6];
+      res += deq2[(tmp1 >>  21) & 0x7][k + 7] * blockvec[k + 7];
+      res += deq2[(tmp1 >>  24) & 0x7][k + 8] * blockvec[k + 8];
+      res += deq2[(tmp1 >>  27) & 0x7][k + 9] * blockvec[k + 9];
 
       i += width;
       tmp2 = as_unsigned(mat[i]);
       tmp = (tmp1 >> 30) | ((tmp2 << 2) & 0x4);
       tmp2 >>= 1;
-      res += deq2[(tmp >>  0) & 0x7][off] * blockvec[k + 10];
+      res += deq2[(tmp >>  0) & 0x7][k + 10] * blockvec[k + 10];
       k += 11;
-      res += deq2[(tmp2 >>  0) & 0x7][off] * blockvec[k + 0];
-      res += deq2[(tmp2 >>  3) & 0x7][off] * blockvec[k + 1];
-      res += deq2[(tmp2 >>  6) & 0x7][off] * blockvec[k + 2];
-      res += deq2[(tmp2 >>  9) & 0x7][off] * blockvec[k + 3];
-      res += deq2[(tmp2 >>  12) & 0x7][off] * blockvec[k + 4];
-      res += deq2[(tmp2 >>  15) & 0x7][off] * blockvec[k + 5];
-      res += deq2[(tmp2 >>  18) & 0x7][off] * blockvec[k + 6];
-      res += deq2[(tmp2 >>  21) & 0x7][off] * blockvec[k + 7];
-      res += deq2[(tmp2 >>  24) & 0x7][off] * blockvec[k + 8];
-      res += deq2[(tmp2 >>  27) & 0x7][off] * blockvec[k + 9];
+      res += deq2[(tmp2 >>  0) & 0x7][k + 0] * blockvec[k + 0];
+      res += deq2[(tmp2 >>  3) & 0x7][k + 1] * blockvec[k + 1];
+      res += deq2[(tmp2 >>  6) & 0x7][k + 2] * blockvec[k + 2];
+      res += deq2[(tmp2 >>  9) & 0x7][k + 3] * blockvec[k + 3];
+      res += deq2[(tmp2 >>  12) & 0x7][k + 4] * blockvec[k + 4];
+      res += deq2[(tmp2 >>  15) & 0x7][k + 5] * blockvec[k + 5];
+      res += deq2[(tmp2 >>  18) & 0x7][k + 6] * blockvec[k + 6];
+      res += deq2[(tmp2 >>  21) & 0x7][k + 7] * blockvec[k + 7];
+      res += deq2[(tmp2 >>  24) & 0x7][k + 8] * blockvec[k + 8];
+      res += deq2[(tmp2 >>  27) & 0x7][k + 9] * blockvec[k + 9];
 
       i += width;
       tmp1 = as_unsigned(mat[i]);
       tmp = (tmp2 >> 30) | ((tmp1 << 1) & 0x6);
       tmp1 >>= 2;
-      res += deq2[(tmp >>  0) & 0x7][off] * blockvec[k + 10];
+      res += deq2[(tmp >>  0) & 0x7][k + 10] * blockvec[k + 10];
       k += 11;
-      res += deq2[(tmp1 >>  0) & 0x7][off] * blockvec[k + 0];
-      res += deq2[(tmp1 >>  3) & 0x7][off] * blockvec[k + 1];
-      res += deq2[(tmp1 >>  6) & 0x7][off] * blockvec[k + 2];
-      res += deq2[(tmp1 >>  9) & 0x7][off] * blockvec[k + 3];
-      res += deq2[(tmp1 >>  12) & 0x7][off] * blockvec[k + 4];
-      res += deq2[(tmp1 >>  15) & 0x7][off] * blockvec[k + 5];
-      res += deq2[(tmp1 >>  18) & 0x7][off] * blockvec[k + 6];
-      res += deq2[(tmp1 >>  21) & 0x7][off] * blockvec[k + 7];
-      res += deq2[(tmp1 >>  24) & 0x7][off] * blockvec[k + 8];
-      res += deq2[(tmp1 >>  27) & 0x7][off] * blockvec[k + 9];
+      res += deq2[(tmp1 >>  0) & 0x7][k + 0] * blockvec[k + 0];
+      res += deq2[(tmp1 >>  3) & 0x7][k + 1] * blockvec[k + 1];
+      res += deq2[(tmp1 >>  6) & 0x7][k + 2] * blockvec[k + 2];
+      res += deq2[(tmp1 >>  9) & 0x7][k + 3] * blockvec[k + 3];
+      res += deq2[(tmp1 >>  12) & 0x7][k + 4] * blockvec[k + 4];
+      res += deq2[(tmp1 >>  15) & 0x7][k + 5] * blockvec[k + 5];
+      res += deq2[(tmp1 >>  18) & 0x7][k + 6] * blockvec[k + 6];
+      res += deq2[(tmp1 >>  21) & 0x7][k + 7] * blockvec[k + 7];
+      res += deq2[(tmp1 >>  24) & 0x7][k + 8] * blockvec[k + 8];
+      res += deq2[(tmp1 >>  27) & 0x7][k + 9] * blockvec[k + 9];
       i += width;
       k += 10;
     }
@@ -1001,9 +1008,9 @@ __global__ void VecQuant4MatMulKernelNUQPerChannelBatched(
   //Modified dequant block
   __shared__ float deq2[16][BLOCKWIDTH];
   int off = threadIdx.x;
-  int column_offset = col * 16;
+  int row_offset = (((row / 4) * 32) + off) * 16;
   for (int val = 0; val < 16; val += 1) {
-    int lut_index = column_offset + (val & 0xf);
+    int lut_index = row_offset + (val & 0xf);
     deq2[val][off] = lookup_table[lut_index];
   }
 
@@ -1024,14 +1031,14 @@ __global__ void VecQuant4MatMulKernelNUQPerChannelBatched(
     while (k < BLOCKWIDTH) {
       tmp = as_unsigned(mat[i]);
 
-      res += deq2[(tmp >>  0) & 0xf][off] * blockvec[k + 0];
-      res += deq2[(tmp >>  4) & 0xf][off] * blockvec[k + 1];
-      res += deq2[(tmp >>  8) & 0xf][off] * blockvec[k + 2];
-      res += deq2[(tmp >>  12) & 0xf][off] * blockvec[k + 3];
-      res += deq2[(tmp >>  16) & 0xf][off] * blockvec[k + 4];
-      res += deq2[(tmp >>  20) & 0xf][off] * blockvec[k + 5];
-      res += deq2[(tmp >>  24) & 0xf][off] * blockvec[k + 6];
-      res += deq2[(tmp >>  28) & 0xf][off] * blockvec[k + 7];
+      res += deq2[(tmp >>  0) & 0xf][k + 0] * blockvec[k + 0];
+      res += deq2[(tmp >>  4) & 0xf][k + 1] * blockvec[k + 1];
+      res += deq2[(tmp >>  8) & 0xf][k + 2] * blockvec[k + 2];
+      res += deq2[(tmp >>  12) & 0xf][k + 3] * blockvec[k + 3];
+      res += deq2[(tmp >>  16) & 0xf][k + 4] * blockvec[k + 4];
+      res += deq2[(tmp >>  20) & 0xf][k + 5] * blockvec[k + 5];
+      res += deq2[(tmp >>  24) & 0xf][k + 6] * blockvec[k + 6];
+      res += deq2[(tmp >>  28) & 0xf][k + 7] * blockvec[k + 7];
 
       i += width;
       k += 8;
