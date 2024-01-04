@@ -285,6 +285,11 @@ if __name__ == '__main__':
         help='Number of dense channel used for hybrid kernel.'
     )
 
+    parser.add_argument(
+        '--precision', action='store',
+        help='Floating point precision, choose between fp32, fp16, fp8, bfp16.'
+    )
+
     DEV = torch.device('cuda:0')
 
     args = parser.parse_args()
