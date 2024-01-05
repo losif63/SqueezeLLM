@@ -157,9 +157,8 @@ class QuantLinearLUT(nn.Module):
         if "--precision" not in arguments:
             precision = "fp32"
         else:
-            precision = arguments[arguments.index("--precision")]
-        print(precision)
-        
+            precision = arguments[arguments.index("--precision") + 1]
+
         if x.shape[-1] == x.numel():
             outshape = list(x.shape)
             if self.bias is not None:
@@ -173,64 +172,242 @@ class QuantLinearLUT(nn.Module):
             if self.bits == 3:
                 x = x.float()
                 if self.include_sparse and self.topX > 0:
-                    quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel(
-                        self.rows, 
-                        self.cols, 
-                        self.vals, 
-                        x, 
-                        self.full_rows, 
-                        self.full_row_indices, 
-                        y, 
-                        self.outfeatures, 
-                        self.qweight, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_fp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_fp8(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_bfp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
                 elif self.include_sparse:
-                    quant_cuda.vecquant3matmul_spmv_nuq_perchannel(
-                        self.rows, 
-                        self.cols, 
-                        self.vals, 
-                        x, 
-                        y, 
-                        self.outfeatures, 
-                        self.qweight, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_fp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_fp8(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_bfp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
                 else:
-                    quant_cuda.vecquant3matmul_nuq_perchannel(
-                        x, 
-                        self.qweight, 
-                        y, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant3matmul_nuq_perchannel(
+                            x, 
+                            self.qweight, 
+                            y, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant3matmul_nuq_perchannel_fp16(
+                            x, 
+                            self.qweight, 
+                            y, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant3matmul_nuq_perchannel_fp8(
+                            x, 
+                            self.qweight, 
+                            y, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant3matmul_nuq_perchannel_bfp16(
+                            x, 
+                            self.qweight, 
+                            y, 
+                            self.lookup_table,
+                        )
             elif self.bits == 4:
                 x = x.float()
                 if self.include_sparse and self.topX > 0:
-                    quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel(
-                        self.rows, 
-                        self.cols, 
-                        self.vals, 
-                        x, 
-                        self.full_rows, 
-                        self.full_row_indices, 
-                        y, 
-                        self.outfeatures, 
-                        self.qweight, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_fp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_fp8(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_bfp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
                 elif self.include_sparse:
-                    quant_cuda.vecquant4matmul_spmv_nuq_perchannel(
-                        self.rows, 
-                        self.cols, 
-                        self.vals, 
-                        x, 
-                        y, 
-                        self.outfeatures, 
-                        self.qweight, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_fp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_fp8(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_bfp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            y, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
                 else:
-                    quant_cuda.vecquant4matmul_nuq_perchannel(x, self.qweight, y, self.lookup_table)
+                    if precision == "fp32":
+                        quant_cuda.vecquant4matmul_nuq_perchannel(x, self.qweight, y, self.lookup_table)
+                    elif precision == "fp16":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_fp16(x, self.qweight, y, self.lookup_table)
+                    elif precision == "fp8":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_fp8(x, self.qweight, y, self.lookup_table)
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_bfp16(x, self.qweight, y, self.lookup_table)
+
             y = y.to(dtype)
             return y.reshape(outshape)
         else:
@@ -241,69 +418,261 @@ class QuantLinearLUT(nn.Module):
             if self.bits == 3:
                 x = x.float()
                 if self.include_sparse and self.topX > 0:
-                    quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_batched(
-                        self.rows, 
-                        self.cols, 
-                        self.vals, 
-                        x, 
-                        self.full_rows, 
-                        self.full_row_indices, 
-                        out, 
-                        self.outfeatures, 
-                        self.qweight, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_batched(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_batched_fp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_batched_fp8(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_batched_bfp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
                 elif self.include_sparse:
-                    quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched(
-                        self.rows, 
-                        self.cols, 
-                        self.vals, 
-                        x, 
-                        out, 
-                        self.outfeatures, 
-                        self.qweight, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched_fp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched_fp8(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched_bfp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
                 else:
-                    quant_cuda.vecquant3matmul_nuq_perchannel_batched(
-                        x, 
-                        self.qweight, 
-                        out, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant3matmul_nuq_perchannel_batched(
+                            x, 
+                            self.qweight, 
+                            out, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant3matmul_nuq_perchannel_batched_fp16(
+                            x, 
+                            self.qweight, 
+                            out, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant3matmul_nuq_perchannel_batched_fp16(
+                            x, 
+                            self.qweight, 
+                            out, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant3matmul_nuq_perchannel_batched_bfp16(
+                            x, 
+                            self.qweight, 
+                            out, 
+                            self.lookup_table,
+                        )
             elif self.bits == 4:
                 x = x.float()
                 if self.include_sparse and self.topX > 0:
-                    quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_batched(
-                        self.rows, 
-                        self.cols, 
-                        self.vals, 
-                        x, 
-                        self.full_rows, 
-                        self.full_row_indices, 
-                        out, 
-                        self.outfeatures, 
-                        self.qweight, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_batched(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_batched_fp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_batched_fp8(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_batched_bfp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            self.full_rows, 
+                            self.full_row_indices, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
                 elif self.include_sparse:
-                    quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched(
-                        self.rows, 
-                        self.cols, 
-                        self.vals, 
-                        x, 
-                        out, 
-                        self.outfeatures, 
-                        self.qweight, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched_fp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched_fp8(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched_bfp16(
+                            self.rows, 
+                            self.cols, 
+                            self.vals, 
+                            x, 
+                            out, 
+                            self.outfeatures, 
+                            self.qweight, 
+                            self.lookup_table,
+                        )
                 else:
-                    quant_cuda.vecquant4matmul_nuq_perchannel_batched(
-                        x, 
-                        self.qweight, 
-                        out, 
-                        self.lookup_table,
-                    )
+                    if precision == "fp32":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_batched(
+                            x, 
+                            self.qweight, 
+                            out, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp16":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_batched_fp16(
+                            x, 
+                            self.qweight, 
+                            out, 
+                            self.lookup_table,
+                        )
+                    elif precision == "fp8":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_batched_fp8(
+                            x, 
+                            self.qweight, 
+                            out, 
+                            self.lookup_table,
+                        )
+                    elif precision == "bfp16":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_batched_bfp16(
+                            x, 
+                            self.qweight, 
+                            out, 
+                            self.lookup_table,
+                        )
             out = out.to(dtype)
             out = out.reshape(out_shape)
             out = out + self.bias if self.bias is not None else out
