@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import math
 import quant_cuda
+import sys
 
 def round_to_nearest_pole_sim(w, poles):
     """
@@ -152,6 +153,13 @@ class QuantLinearLUT(nn.Module):
 
     #replacement forward pass
     def forward(self, x):
+        arguments = sys.argv
+        if "--precision" not in arguments:
+            precision = "fp32"
+        else:
+            precision = arguments[arguments.index("--precision")]
+        print(precision)
+        
         if x.shape[-1] == x.numel():
             outshape = list(x.shape)
             if self.bias is not None:
