@@ -3,7 +3,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
-
+#include <cuda_bf16.h>
 
 // half-tensor
 #include <c10/cuda/CUDAStream.h>
@@ -3102,7 +3102,45 @@ void vecquant4matmul_spmv_hybrid_nuq_perchannel_batched_bfp16_cuda(
 
 }
 
-#define BMUL_FLOATS(a, b) (__bfloat162float(__hmul(__float2bfloat16(a), __float2bfloat16(b))))
+__device__ __nv_bfloat16 __bmul(__nv_bfloat16 a, __nv_bfloat16 b) {
+  unsigned short* aAsInt = reinterpret_cast<unsigned short*>(&a);
+  unsigned short* bAsInt = reinterpret_cast<unsigned short*>(&b);
+
+  unsigned short sign_a = *aAsInt >> 15;
+  unsigned short exponent_a = (*aAsInt >> 7) & 0xFF;
+  unsigned short mantissa_a = *aAsInt & 0x7F;
+  mantissa_a |= 0x80;
+
+  unsigned short sign_b = *bAsInt >> 15;
+  unsigned short exponent_b = (*bAsInt >> 7) & 0xFF;
+  unsigned short mantissa_b = *bAsInt & 0x7F;
+  mantissa_b |= 0x80;
+  // Handle exponent bias
+  short exponent_result = exponent_a + exponent_b - 127;
+
+  // Calculate product of mantissas
+  unsigned int product = (unsigned int)mantissa_a * (unsigned int)mantissa_b;
+  short carry = (product >> 15) & 0x1;
+  exponent_result += carry;
+
+  // Combine the components to form the bfloat16 representation
+  unsigned short result = 0;
+  result |= (sign_a ^ sign_b) << 15;
+
+  if (exponent_result <= 0) {
+    // Number tooo small, record exponent as zero
+    short shift = 8 + carry - exponent_result;
+    result |= (unsigned short)((product >> shift) & 0x7F);  // Adjust the shift to fit into 7 bits
+  }
+  else {
+    result |= (exponent_result & 0xFF) << 7;
+    unsigned short shift = 7 + carry;
+    result |= (unsigned short)((product >> shift) & 0x7F);  // Adjust the shift to fit into 7 bits
+  }
+  return *reinterpret_cast<__nv_bfloat16*>(&result);
+}
+
+#define BMUL_FLOATS(a, b) (__bfloat162float(__bmul(__float2bfloat16(a), __float2bfloat16(b))))
 
 __global__ void VecQuant3MatMulKernelNUQPerChannel_bfp16(
     const  float* __restrict__ vec,
