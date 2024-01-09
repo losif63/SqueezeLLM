@@ -198,8 +198,8 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_custom(
                             self.rows, 
                             self.cols, 
                             self.vals, 
@@ -247,8 +247,8 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_custom(
                             self.rows, 
                             self.cols, 
                             self.vals, 
@@ -284,8 +284,8 @@ class QuantLinearLUT(nn.Module):
                             y, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant3matmul_nuq_perchannel_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant3matmul_nuq_perchannel_custom(
                             x, 
                             self.qweight, 
                             y, 
@@ -327,8 +327,8 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_custom(
                             self.rows, 
                             self.cols, 
                             self.vals, 
@@ -376,8 +376,8 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_custom(
                             self.rows, 
                             self.cols, 
                             self.vals, 
@@ -403,12 +403,13 @@ class QuantLinearLUT(nn.Module):
                         quant_cuda.vecquant4matmul_nuq_perchannel(x, self.qweight, y, self.lookup_table)
                     elif precision == "fp16":
                         quant_cuda.vecquant4matmul_nuq_perchannel_fp16(x, self.qweight, y, self.lookup_table)
-                    elif precision == "fp8":
-                        quant_cuda.vecquant4matmul_nuq_perchannel_fp8(x, self.qweight, y, self.lookup_table)
+                    elif precision == "custom":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_custom(x, self.qweight, y, self.lookup_table)
                     elif precision == "bfp16":
                         quant_cuda.vecquant4matmul_nuq_perchannel_bfp16(x, self.qweight, y, self.lookup_table)
 
             y = y.to(dtype)
+            print(y)
             return y.reshape(outshape)
         else:
             out_shape = x.shape[:-1] + (self.outfeatures, )
@@ -444,8 +445,8 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_batched_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_batched_custom(
                             self.rows, 
                             self.cols, 
                             self.vals, 
@@ -493,8 +494,8 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched_custom(
                             self.rows, 
                             self.cols, 
                             self.vals, 
@@ -530,7 +531,7 @@ class QuantLinearLUT(nn.Module):
                             out, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
+                    elif precision == "custom":
                         quant_cuda.vecquant3matmul_nuq_perchannel_batched_fp16(
                             x, 
                             self.qweight, 
@@ -573,8 +574,8 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_batched_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_batched_custom(
                             self.rows, 
                             self.cols, 
                             self.vals, 
@@ -622,8 +623,8 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched_custom(
                             self.rows, 
                             self.cols, 
                             self.vals, 
@@ -659,8 +660,8 @@ class QuantLinearLUT(nn.Module):
                             out, 
                             self.lookup_table,
                         )
-                    elif precision == "fp8":
-                        quant_cuda.vecquant4matmul_nuq_perchannel_batched_fp8(
+                    elif precision == "custom":
+                        quant_cuda.vecquant4matmul_nuq_perchannel_batched_custom(
                             x, 
                             self.qweight, 
                             out, 
@@ -676,6 +677,7 @@ class QuantLinearLUT(nn.Module):
             out = out.to(dtype)
             out = out.reshape(out_shape)
             out = out + self.bias if self.bias is not None else out
+            print(out)
             return out
 
 # function to iterate through model layers and replace with our LUT-based layer
