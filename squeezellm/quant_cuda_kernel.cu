@@ -4303,65 +4303,127 @@ void vecquant4matmul_spmv_hybrid_nuq_perchannel_batched_custom_cuda(
 #define C_EXPONENT 5
 #define C_MANTISSA 10
 
+__device__ unsigned int round_to_even(unsigned int x, unsigned int rounding_point) {
+  const int STICKY_MASK = (1 << rounding_point) - 1;
+  const int ROUND_MASK = ~((1 << (rounding_point + 1)) - 1);
+  
+  unsigned int G = (x >> (rounding_point + 1)) & 0x1;
+  unsigned int R = (x >> rounding_point) & 0x1;
+  unsigned int sticky = x & STICKY_MASK;
+
+  if (R == 0) {
+    return x & ROUND_MASK;
+  } else if (sticky != 0){
+    x += (1 << rounding_point);
+    return x & ROUND_MASK;
+  } else if (G != 0) {
+    x += (1 << rounding_point);
+    return x & ROUND_MASK;
+  } else {
+    return x & ROUND_MASK;
+  }
+
+}
+
 __device__ unsigned int __cmul(unsigned int a, unsigned int b) {
   unsigned int EXP_MASK = (1 << C_EXPONENT) - 1;
   unsigned int MAN_MASK = (1 << C_MANTISSA) - 1;
   int EXP_BIAS = (1 << (C_EXPONENT - 1)) - 1;
   
   unsigned int sign_a = a >> (C_EXPONENT + C_MANTISSA);
-  unsigned int exponent_a = (a >> C_MANTISSA) & EXP_MASK;
+  int exponent_a = (a >> C_MANTISSA) & EXP_MASK;
   unsigned int mantissa_a = a & MAN_MASK;
-  if(exponent_a > 0) {
-    mantissa_a |= (1 << C_MANTISSA);
-  }
+  if(exponent_a != 0) mantissa_a |= (1 << C_MANTISSA);
 
-  unsigned short sign_b = b >> (C_EXPONENT + C_MANTISSA);
-  unsigned short exponent_b = (b >> C_MANTISSA) & EXP_MASK;
-  unsigned short mantissa_b = b & MAN_MASK;
-  if(exponent_b > 0) {
-    mantissa_b |= (1 << C_MANTISSA);
-  }
+  unsigned int sign_b = b >> (C_EXPONENT + C_MANTISSA);
+  int exponent_b = (b >> C_MANTISSA) & EXP_MASK;
+  unsigned int mantissa_b = b & MAN_MASK;
+  if(exponent_b != 0) mantissa_b |= (1 << C_MANTISSA);
 
   // Combine the components to form the custom representation
   unsigned int result = 0;
   result |= (sign_a ^ sign_b) << (C_EXPONENT + C_MANTISSA);
   // Calculate product of mantissas
-  unsigned int product = (unsigned int)mantissa_a * (unsigned int)mantissa_b;
-  
-  if (exponent_a > 0 && exponent_b > 0) {
+  unsigned int product = mantissa_a * mantissa_b;
+
+  if (exponent_a != 0 && exponent_b != 0) {
+    // Both numbers are normalized values
+    // Product is 1.xx * 2^(E1+E2) form, need to round
     // Handle exponent bias
     int exponent_result = exponent_a + exponent_b - EXP_BIAS;
     short carry = (product >> ((2 * C_MANTISSA) + 1)) & 0x1;
     exponent_result += carry;
-
     if (exponent_result <= 0) {
       // Number tooo small, record exponent as zero
+      // However, after rounding, exponent may increase nonzero
       int shift = C_MANTISSA + 1 + carry - exponent_result;
+      product = round_to_even(product, shift - 1);
+      if (((product >> (shift + C_MANTISSA)) & 0x1) != 0) {
+        // Additional carry happened
+        exponent_result += 1;
+        if (exponent_result > 0) {
+          // Need to check if exponent becomes positive
+          // If so, need to add exponent to result
+          result |= (exponent_result & EXP_MASK) << C_MANTISSA;
+        } else {
+          // If not, need to shift & round once more
+          product = round_to_even(product >> 1, shift - 1);
+        }
+      }
       result |= (unsigned short)((product >> shift) & MAN_MASK); 
     }
     else {
-      result |= (exponent_result & EXP_MASK) << C_MANTISSA;
+      // First round mantissa first
       int shift = C_MANTISSA + carry;
+      product = round_to_even(product, shift - 1);
+      if (((product >> (shift + C_MANTISSA + 1)) & 0x1) != 0) {
+        exponent_result += 1;
+        product = round_to_even(product >> 1, shift - 1);
+      }
+      // After rounding, create result floating point number
       result |= (unsigned short)((product >> shift) & MAN_MASK);
+      result |= (exponent_result & EXP_MASK) << C_MANTISSA;
+      
     }
-  } else if (exponent_a > 0 || exponent_b > 0) {
-    short exponent_result = exponent_a + exponent_b - (EXP_BIAS - 1);
+  } else if (exponent_a != 0 || exponent_b != 0) {
+    // One of the numbers are denormalized
+    // In this case, the product is 0.xx * 2^E1-126
+    // Need to process accordingly
+    int exponent_result = exponent_a + exponent_b - (EXP_BIAS - 1);
     short even_smaller = __clz(product) - (32 - 2 * C_MANTISSA - 1);
     if (exponent_result - even_smaller <= 0) {
+      // Product is denormalized number
       if (exponent_result > 0) {
+        // Shift the product & exponent to denormalized format
         product = product << exponent_result;
         exponent_result = 0;
       }
       short shift = C_MANTISSA + 1 - exponent_result;
+      // Perform rounding
+      product = round_to_even(product, shift - 1);
+      if (((product >> (shift + C_MANTISSA)) & 0x1) != 0) {
+        // Additional carry happened!! It is now a normalized number
+        // In this case, let the product be but set exponent as 1
+        exponent_result = 1;
+        result |= (exponent_result & EXP_MASK) << C_MANTISSA;
+      }
       result |= (unsigned short)((product >> shift) & MAN_MASK);
     } else {
+      // Thankfully, result is normalized number
       exponent_result -= even_smaller;
-      result |= (exponent_result & EXP_MASK) << C_MANTISSA;
       product = product << even_smaller;
       short shift = C_MANTISSA;
+      // Perform rounding first
+      product = round_to_even(product, shift - 1);
+      if (((product >> (shift + C_MANTISSA)) & 0x1) != 0) {
+        exponent_result += 1;
+        product = round_to_even(product >> 1, shift - 1);
+      }
+      result |= (exponent_result & EXP_MASK) << C_MANTISSA;
       result |= (unsigned short)((product >> shift) & MAN_MASK);
     }
   }
+  // If both exponents are zero, then result is too small so it is zero
   return result;
 }
 
@@ -4375,50 +4437,119 @@ __device__ unsigned int float2custom(float x) {
 
   unsigned int a = __float_as_uint(x);
   unsigned int sign = a >> 31;
-  unsigned int exponent = ((a >> 23) & EXP_MASK);
+  int exponent = ((a >> 23) & EXP_MASK);
   unsigned int mantissa = a & MAN_MASK;
 
   unsigned int result = 0;
   result |= sign << (C_EXPONENT + C_MANTISSA);
 
-  // When converting to a larger range, need to be careful when exponent = 0
   if (C_EXPONENT > 8 && exponent == 0) {
-    if (mantissa == 0) {
-      // if (threadIdx.x == 0)
-      //   printf("Float -> Custom, %x, %x\n", a, result);
-      return __uint_as_float(result);
-    } 
+    // When converting to a larger range, need to be careful when exponent = 0
+    // Denormalized value in fp32 may be a normalized value in new precision
+    if (mantissa == 0) return __uint_as_float(result);    // Zero will be zero
+
     exponent = -126 + C_EXP_BIAS;
-    while (exponent > 0 && (mantissa >> (C_MANTISSA - 1)) == 0) {
+    while (exponent > 0 && ((mantissa >> 23) & 0x1) == 0) {
       exponent -= 1;
-      mantissa = (mantissa << 1) & MAN_MASK;
+      mantissa = mantissa << 1;
     }
-    if (exponent == 0) {
-      if (C_MANTISSA <= 23) result |= mantissa >> (23 - C_MANTISSA);
-      else result |= mantissa << (C_MANTISSA - 23);
-    } else {
-      exponent -= 1;
-      mantissa = (mantissa << 1) & MAN_MASK;
+    if (((mantissa >> 23) & 0x1) == 1) {
+      // Normalized value in new precision
+      if (exponent == 0) exponent++;
+      // Exponent may differ after rounding, so handle mantissa first
+      if (C_MANTISSA < 23) {
+        // Perform rounding if mantissa becomes narrower
+        mantissa = round_to_even(mantissa, 22 - C_MANTISSA);
+        int carry = (mantissa >> 24) & 0x1;
+        if (carry != 0) {
+          exponent += 1;
+          mantissa = round_to_even(mantissa >> 1, 22 - C_MANTISSA);
+        }
+        result |= (mantissa >> (23 - C_MANTISSA)) & C_MAN_MASK;
+      } else result |= (mantissa << (C_MANTISSA - 23)) & C_MAN_MASK;
+      // Copy final exponent value to result
       result |= exponent << C_MANTISSA;
-      if (C_MANTISSA <= 23) result |= mantissa >> (23 - C_MANTISSA);
-      else result |= mantissa << (C_MANTISSA - 23);
+    } 
+    
+    else {
+      // Denormalized value in new precision, currently exponent == 0
+      // However, may be different after rounding
+      if (C_MANTISSA < 23) {
+        // Perform rounding if mantissa becomes narrower
+        mantissa = round_to_even(mantissa, 22 - C_MANTISSA);
+        int carry = (mantissa >> 23) & 0x1;
+        if (carry != 0) {
+          // After rounding, became a normalized value
+          // Exponent is now 1
+          exponent++;
+          result |= exponent << C_MANTISSA;
+        }
+        result |= (mantissa >> (23 - C_MANTISSA)) & C_MAN_MASK;
+      } else result |= (mantissa << (C_MANTISSA - 23)) & C_MAN_MASK;   // No rounding
     }
-  }
-  else {
+  } 
+  
+  else if (C_EXPONENT > 8) {
+    // Converting to larger range a previously normalized value
+    // Previously normalized values are always normalized values
     exponent = exponent - 127 + C_EXP_BIAS;
+    mantissa |= 1 << 23;
+    if (C_MANTISSA < 23) {
+      // Perform rounding if mantissa becomes narrower
+      mantissa = round_to_even(mantissa, 22 - C_MANTISSA);
+      int carry = (mantissa >> 24) & 0x1;
+      if (carry != 0) {
+        exponent += 1;
+        mantissa = round_to_even(mantissa >> 1, 22 - C_MANTISSA);
+      }
+      result |= (mantissa >> (23 - C_MANTISSA)) & C_MAN_MASK;
+    } else result |= (mantissa << (C_MANTISSA - 23)) & C_MAN_MASK;   // No rounding
+    result |= exponent << C_MANTISSA;
+  } 
+  
+  else {
+    // Converting to a narrower exponent range
+    // Denormalized -> Denormalized, Normalized -> Denormalized | Normalized
+    if(exponent == 0) exponent++;
+    else mantissa |= 1 << 23;
+    exponent = exponent - 127 + C_EXP_BIAS;
+    
     if (exponent < C_EXP_MASK && exponent > 0) {
+      // Normalized values
+      if (C_MANTISSA < 23) {
+        // Perform rounding
+        mantissa = round_to_even(mantissa, 22 - C_MANTISSA);
+        int carry = (mantissa >> 24) & 0x1;
+        if (carry != 0) {
+          exponent += 1;
+          mantissa = round_to_even(mantissa >> 1, 22 - C_MANTISSA);
+        }
+        result |= (mantissa >> (23 - C_MANTISSA)) & C_MAN_MASK;
+      } else result |= (mantissa << (C_MANTISSA - 23)) & C_MAN_MASK;   // No rounding
       result |= exponent << C_MANTISSA;
-      if (C_MANTISSA <= 23) result |= mantissa >> (23 - C_MANTISSA);
-      else result |= mantissa << (C_MANTISSA - 23);
-    } else if (exponent <= 0) {
-      if (C_MANTISSA <= 23) result |= mantissa >> (23 - C_MANTISSA);
-      else result |= mantissa << (C_MANTISSA - 23);
-    } else {
+    } 
+    
+    else if (exponent <= 0) {
+      // Previously denormalized values + Normalized values but too small
+      // After rounding, they may be normalized
+      mantissa = mantissa >> (1 - exponent);
+      if (C_MANTISSA < 23) {
+        // Perform rounding
+        mantissa = round_to_even(mantissa, 22 - C_MANTISSA);
+        int carry = (mantissa >> 23) & 0x1;
+        if (carry != 0) {
+          exponent = 1;
+          result |= exponent << C_MANTISSA;
+        }
+        result |= (mantissa >> (23 - C_MANTISSA)) & C_MAN_MASK;
+      } else result |= (mantissa << (C_MANTISSA - 23)) & C_MAN_MASK;
+    } 
+    
+    else {
+      // These guys are inf
       result |= C_EXP_MASK << C_MANTISSA;
     }
   }
-  // if (threadIdx.x == 0)
-  //   printf("Float -> Custom, %x, %x\n", a, result);
   return result;
 }
 
@@ -4431,49 +4562,117 @@ __device__ float custom2float(unsigned int a) {
   unsigned int C_EXP_BIAS = (1 << (C_EXPONENT - 1)) - 1;
 
   unsigned int sign = a >> (C_EXPONENT + C_MANTISSA);
-  unsigned int exponent = ((a >> C_MANTISSA) & C_EXP_MASK);
-  unsigned int mantissa = a & C_MAN_MASK;\
+  int exponent = ((a >> C_MANTISSA) & C_EXP_MASK);
+  unsigned int mantissa = a & C_MAN_MASK;
   unsigned int result = 0;
   result |= sign << 31;
 
-  // When converting to a larger range, need to be careful when exponent = 0
-  if (8 > C_EXPONENT && exponent == 0) {
-    if (mantissa == 0) {
-      // if (threadIdx.x == 0)
-      //   printf("Custom -> Float, %x, %x\n", a, result);
-      return __uint_as_float(result);
-    }
+  if (C_EXPONENT < 8 && exponent == 0) {
+    // When converting to a larger range, need to be careful when exponent = 0
+    if (mantissa == 0) return __uint_as_float(result);  // Zero will be zero
+
     exponent = 1 - C_EXP_BIAS + 127;
-    while (exponent > 0 && (mantissa >> (C_MANTISSA - 1)) == 0) {
+    while (exponent > 0 && ((mantissa >> C_MANTISSA) & 0x1) == 0) {
       exponent -= 1;
-      mantissa = (mantissa << 1) & C_MAN_MASK;
+      mantissa = mantissa << 1;
     }
-    if (exponent == 0) {
-      if (C_MANTISSA <= 23) result |= mantissa << (23 - C_MANTISSA);
-      else result |= mantissa >> (C_MANTISSA - 23);
-    } else {
-      exponent -= 1;
-      mantissa = (mantissa << 1) & C_MAN_MASK;
+    if (((mantissa >> C_MANTISSA) & 0x1) == 1) {
+      // Normalized value in new precision
+      if (exponent == 0) exponent++;
+      // Exponent may differ after rounding, so handle mantissa first
+      if (C_MANTISSA > 23) {
+        // Perform rounding if mantissa becomes narrower
+        mantissa = round_to_even(mantissa, C_MANTISSA - 24);
+        int carry = (mantissa >> (C_MANTISSA + 1)) & 0x1;
+        if (carry != 0) {
+          exponent += 1;
+          mantissa = round_to_even(mantissa >> 1, C_MANTISSA - 24);
+        }
+        result |= (mantissa >> (C_MANTISSA - 23)) & MAN_MASK;
+      } else result |= (mantissa << (23 - C_MANTISSA)) & MAN_MASK;
+      // Copy final exponent value to the result
       result |= exponent << 23;
-      if (C_MANTISSA <= 23) result |= mantissa << (23 - C_MANTISSA);
-      else result |= mantissa >> (C_MANTISSA - 23);
+    } 
+    
+    else {
+      // Denormalized value in new precision, currently exponent == 0
+      // However, may become normalized after rounding
+      if (C_MANTISSA > 23) {
+        // Perform rounding if mantissa becomes narrower
+        mantissa = round_to_even(mantissa, C_MANTISSA - 24);
+        int carry = (mantissa >> C_MANTISSA) & 0x1;
+        if (carry != 0) {
+          // After rounding, became a normalized value
+          // Exponent is now 1
+          exponent++;
+          result |= exponent << 23;
+        }
+        result |= (mantissa >> (C_MANTISSA - 23)) & MAN_MASK;
+      } else result |= (mantissa << (23 - C_MANTISSA)) & MAN_MASK;   // No rounding
     }
   }
-  else {
+
+  else if (C_EXPONENT < 8) {
+    // Converting to a larger range a previously normalized value
+    // Previously normalized values are always normalized values
     exponent = exponent - C_EXP_BIAS + 127;
+    mantissa |= 1 << C_MANTISSA;
+    if(C_MANTISSA > 23) {
+      // Perform rounding if mantissa becomes narrower
+      mantissa = round_to_even(mantissa, C_MANTISSA - 24);
+      int carry = (mantissa >> (C_MANTISSA + 1)) & 0x1;
+      if (carry != 0) {
+        exponent++;
+        mantissa = round_to_even(mantissa >> 1, C_MANTISSA - 24);
+      }
+      result |= (mantissa >> (C_MANTISSA - 23)) & MAN_MASK;
+    } else result |= (mantissa << (23 - C_MANTISSA)) & MAN_MASK;
+    result |= exponent << 23;
+  }
+
+  else {
+    // Converting to a narrower exponent range
+    // Denormalized -> Denormalized, Normalized -> Denormalized | Normalized
+    if (exponent != 0) mantissa |= 1 << C_MANTISSA;
+    else exponent++;
+    exponent = exponent - C_EXP_BIAS + 127;
+
     if (exponent < EXP_MASK && exponent > 0) {
+      // Normalized values
+      if (C_MANTISSA > 23) {
+        // Perform rounding
+        mantissa = round_to_even(mantissa, C_MANTISSA - 24);
+        int carry = (mantissa >> (C_MANTISSA + 1)) & 0x1;
+        if (carry != 0) {
+          exponent++;
+          mantissa = round_to_even(mantissa >> 1, C_MANTISSA - 24);
+        }
+        result |= (mantissa >> (C_MANTISSA - 23)) & MAN_MASK;
+      } else result |= (mantissa << (23 - C_MANTISSA)) & MAN_MASK;
       result |= exponent << 23;
-      if (C_MANTISSA <= 23) result |= mantissa << (23 - C_MANTISSA);
-      else result |= mantissa >> (C_MANTISSA - 23);
-    } else if (exponent <= 0) {
-      if (C_MANTISSA <= 23) result |= mantissa << (23 - C_MANTISSA);
-      else result |= mantissa >> (C_MANTISSA - 23);
-    } else {
+    }
+
+    else if (exponent <= 0) {
+      // Previously denormalized values will come to here anyway
+      // After rounding, they may be normalized
+      mantissa = mantissa >> (1 - exponent);
+      if (C_MANTISSA > 23) {
+        // Perform rounding
+        mantissa = round_to_even(mantissa, C_MANTISSA - 24);
+        int carry = (mantissa >> C_MANTISSA) & 0x1;
+        if (carry != 0) {
+          exponent = 1;
+          result |= exponent << 23;
+        }
+        result |= (mantissa >> (C_MANTISSA - 23)) & MAN_MASK;
+      } else result |= (mantissa << (23 - C_MANTISSA)) & MAN_MASK;
+    }
+
+    else {
+      // These guys are inf
       result |= EXP_MASK << 23;
     }
   }
-  // if (threadIdx.x == 0)
-  //   printf("Custom -> Float, %x, %x\n", a, result);
   return __uint_as_float(result);
 }
 
