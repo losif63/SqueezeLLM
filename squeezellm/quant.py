@@ -211,19 +211,6 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_bfp16(
-                            self.rows, 
-                            self.cols, 
-                            self.vals, 
-                            x, 
-                            self.full_rows, 
-                            self.full_row_indices, 
-                            y, 
-                            self.outfeatures, 
-                            self.qweight, 
-                            self.lookup_table,
-                        )
                 elif self.include_sparse:
                     if precision == "fp32":
                         quant_cuda.vecquant3matmul_spmv_nuq_perchannel(
@@ -258,17 +245,6 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_bfp16(
-                            self.rows, 
-                            self.cols, 
-                            self.vals, 
-                            x, 
-                            y, 
-                            self.outfeatures, 
-                            self.qweight, 
-                            self.lookup_table,
-                        )
                 else:
                     if precision == "fp32":
                         quant_cuda.vecquant3matmul_nuq_perchannel(
@@ -286,13 +262,6 @@ class QuantLinearLUT(nn.Module):
                         )
                     elif precision == "custom":
                         quant_cuda.vecquant3matmul_nuq_perchannel_custom(
-                            x, 
-                            self.qweight, 
-                            y, 
-                            self.lookup_table,
-                        )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant3matmul_nuq_perchannel_bfp16(
                             x, 
                             self.qweight, 
                             y, 
@@ -340,19 +309,6 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_bfp16(
-                            self.rows, 
-                            self.cols, 
-                            self.vals, 
-                            x, 
-                            self.full_rows, 
-                            self.full_row_indices, 
-                            y, 
-                            self.outfeatures, 
-                            self.qweight, 
-                            self.lookup_table,
-                        )
                 elif self.include_sparse:
                     if precision == "fp32":
                         quant_cuda.vecquant4matmul_spmv_nuq_perchannel(
@@ -387,17 +343,6 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_bfp16(
-                            self.rows, 
-                            self.cols, 
-                            self.vals, 
-                            x, 
-                            y, 
-                            self.outfeatures, 
-                            self.qweight, 
-                            self.lookup_table,
-                        )
                 else:
                     if precision == "fp32":
                         quant_cuda.vecquant4matmul_nuq_perchannel(x, self.qweight, y, self.lookup_table)
@@ -405,9 +350,6 @@ class QuantLinearLUT(nn.Module):
                         quant_cuda.vecquant4matmul_nuq_perchannel_fp16(x, self.qweight, y, self.lookup_table)
                     elif precision == "custom":
                         quant_cuda.vecquant4matmul_nuq_perchannel_custom(x, self.qweight, y, self.lookup_table)
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant4matmul_nuq_perchannel_bfp16(x, self.qweight, y, self.lookup_table)
-
             y = y.to(dtype)
             print(y)
             return y.reshape(outshape)
@@ -458,19 +400,6 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant3matmul_spmv_hybrid_nuq_perchannel_batched_bfp16(
-                            self.rows, 
-                            self.cols, 
-                            self.vals, 
-                            x, 
-                            self.full_rows, 
-                            self.full_row_indices, 
-                            out, 
-                            self.outfeatures, 
-                            self.qweight, 
-                            self.lookup_table,
-                        )
                 elif self.include_sparse:
                     if precision == "fp32":
                         quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched(
@@ -505,17 +434,6 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant3matmul_spmv_nuq_perchannel_batched_bfp16(
-                            self.rows, 
-                            self.cols, 
-                            self.vals, 
-                            x, 
-                            out, 
-                            self.outfeatures, 
-                            self.qweight, 
-                            self.lookup_table,
-                        )
                 else:
                     if precision == "fp32":
                         quant_cuda.vecquant3matmul_nuq_perchannel_batched(
@@ -533,13 +451,6 @@ class QuantLinearLUT(nn.Module):
                         )
                     elif precision == "custom":
                         quant_cuda.vecquant3matmul_nuq_perchannel_batched_fp16(
-                            x, 
-                            self.qweight, 
-                            out, 
-                            self.lookup_table,
-                        )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant3matmul_nuq_perchannel_batched_bfp16(
                             x, 
                             self.qweight, 
                             out, 
@@ -587,19 +498,6 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant4matmul_spmv_hybrid_nuq_perchannel_batched_bfp16(
-                            self.rows, 
-                            self.cols, 
-                            self.vals, 
-                            x, 
-                            self.full_rows, 
-                            self.full_row_indices, 
-                            out, 
-                            self.outfeatures, 
-                            self.qweight, 
-                            self.lookup_table,
-                        )
                 elif self.include_sparse:
                     if precision == "fp32":
                         quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched(
@@ -634,17 +532,6 @@ class QuantLinearLUT(nn.Module):
                             self.qweight, 
                             self.lookup_table,
                         )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant4matmul_spmv_nuq_perchannel_batched_bfp16(
-                            self.rows, 
-                            self.cols, 
-                            self.vals, 
-                            x, 
-                            out, 
-                            self.outfeatures, 
-                            self.qweight, 
-                            self.lookup_table,
-                        )
                 else:
                     if precision == "fp32":
                         quant_cuda.vecquant4matmul_nuq_perchannel_batched(
@@ -662,13 +549,6 @@ class QuantLinearLUT(nn.Module):
                         )
                     elif precision == "custom":
                         quant_cuda.vecquant4matmul_nuq_perchannel_batched_custom(
-                            x, 
-                            self.qweight, 
-                            out, 
-                            self.lookup_table,
-                        )
-                    elif precision == "bfp16":
-                        quant_cuda.vecquant4matmul_nuq_perchannel_batched_bfp16(
                             x, 
                             self.qweight, 
                             out, 
