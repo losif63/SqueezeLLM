@@ -3041,6 +3041,27 @@ __device__ unsigned int round_to_even(unsigned int x, unsigned int rounding_poin
 
 }
 
+__device__ unsigned long round_to_even_long(unsigned long x, unsigned int rounding_point) {
+  const int STICKY_MASK = (1 << rounding_point) - 1;
+  const int ROUND_MASK = ~((1 << (rounding_point + 1)) - 1);
+  
+  unsigned int G = (x >> (rounding_point + 1)) & 0x1;
+  unsigned int R = (x >> rounding_point) & 0x1;
+  unsigned int sticky = x & STICKY_MASK;
+
+  if (R == 0) {
+    return x & ROUND_MASK;
+  } else if (sticky != 0){
+    x += (1 << rounding_point);
+    return x & ROUND_MASK;
+  } else if (G != 0) {
+    x += (1 << rounding_point);
+    return x & ROUND_MASK;
+  } else {
+    return x & ROUND_MASK;
+  }
+}
+
 __device__ unsigned int __cmul(unsigned int a, unsigned int b) {
   unsigned int EXP_MASK = (1 << C_EXPONENT) - 1;
   unsigned int MAN_MASK = (1 << C_MANTISSA) - 1;
@@ -3140,6 +3161,112 @@ __device__ unsigned int __cmul(unsigned int a, unsigned int b) {
     }
   }
   // If both exponents are zero, then result is too small so it is zero
+  return result;
+}
+
+__device__ unsigned int __cadd(unsigned int a, unsigned int b) {
+  unsigned int EXP_MASK = (1 << C_EXPONENT) - 1;
+  unsigned int MAN_MASK = (1 << C_MANTISSA) - 1;
+  int EXP_BIAS = (1 << (C_EXPONENT - 1)) - 1;
+  
+  unsigned int sign_a = a >> (C_EXPONENT + C_MANTISSA);
+  int exponent_a = (a >> C_MANTISSA) & EXP_MASK;
+  unsigned int mantissa_a = a & MAN_MASK;
+  if(exponent_a != 0) mantissa_a |= (1 << C_MANTISSA);
+  else exponent_a++;
+
+  unsigned int sign_b = b >> (C_EXPONENT + C_MANTISSA);
+  int exponent_b = (b >> C_MANTISSA) & EXP_MASK;
+  unsigned int mantissa_b = b & MAN_MASK;
+  if(exponent_b != 0) mantissa_b |= (1 << C_MANTISSA);
+  else exponent_b++;
+
+  unsigned int result = 0;
+  unsigned int mantissa, exponent;
+
+  if (exponent_a == exponent_b) {
+    if (sign_a == sign_b) {
+      result |= sign_a << (C_EXPONENT + C_MANTISSA);
+      mantissa = mantissa_a + mantissa_b;
+      exponent = exponent_a;
+      if (mantissa >> (C_MANTISSA + 1) != 0) {
+        exponent += 1;
+        mantissa = round_to_even(mantissa, 0) >> 1;
+      }
+    } else {
+      if(mantissa_a > mantissa_b) {
+        result |= sign_a << (C_EXPONENT + C_MANTISSA);
+        mantissa = mantissa_a - mantissa_b;
+        exponent = exponent_a;
+      } else {
+        result |= sign_b << (C_EXPONENT + C_MANTISSA);
+        mantissa = mantissa_b - mantissa_a;
+        exponent = exponent_b;  
+      }
+      while (exponent > 1 && (mantissa >> C_MANTISSA) == 0) {
+        mantissa = mantissa << 1;
+        exponent -= 1;
+      }
+      if (exponent == 1 && (mantissa >> C_MANTISSA) == 0) exponent = 0;  
+    }
+    result |= exponent << C_MANTISSA;
+    result |= (mantissa & MAN_MASK);
+  } else if (exponent_a > exponent_b) {
+    result |= sign_a << (C_EXPONENT + C_MANTISSA);
+    exponent = exponent_a;
+    if (sign_a == sign_b) {
+      unsigned int shift = exponent_a - exponent_b;
+      unsigned long accumulator = (mantissa_a << shift) + mantissa_b;   
+      if (accumulator >> (C_MANTISSA + shift + 1) != 0) {
+        exponent += 1;
+        shift += 1;
+      }
+      accumulator = round_to_even_long(accumulator, shift - 1);
+      if (accumulator >> (C_MANTISSA + shift + 1) != 0) exponent += 1;
+      mantissa = (accumulator >> shift) & MAN_MASK;
+    } else {
+      unsigned int shift = exponent_a - exponent_b;
+      unsigned long accumulator = (mantissa_a << shift) - mantissa_b;
+      while (exponent > 1 && (accumulator >> (C_MANTISSA + shift)) == 0) {
+        exponent -= 1;
+        accumulator = accumulator << 1;
+      }
+      if (exponent == 1 && (accumulator >> (C_MANTISSA + shift)) == 0) exponent = 0;
+      accumulator = round_to_even_long(accumulator, shift - 1);
+      if (accumulator >> (C_MANTISSA + shift + 1) != 0) exponent += 1;
+      mantissa = (accumulator >> shift) & MAN_MASK;
+    }
+    result |= exponent << C_MANTISSA;
+    result |= (mantissa & MAN_MASK);
+  } else {
+    result |= sign_b << (C_EXPONENT + C_MANTISSA);
+    exponent = exponent_b;
+    if (sign_a == sign_b) {
+      unsigned int shift = exponent_b - exponent_a;
+      unsigned long accumulator = (mantissa_b << shift) + mantissa_a;   
+      if (accumulator >> (C_MANTISSA + shift + 1) != 0) {
+        exponent += 1;
+        shift += 1;
+      }
+      accumulator = round_to_even_long(accumulator, shift - 1);
+      if (accumulator >> (C_MANTISSA + shift + 1) != 0) exponent += 1;
+      mantissa = (accumulator >> shift) & MAN_MASK;
+    } else {
+      unsigned int shift = exponent_b - exponent_a;
+      unsigned long accumulator = (mantissa_b << shift) - mantissa_a;
+      while (exponent > 1 && (accumulator >> (C_MANTISSA + shift)) == 0) {
+        exponent -= 1;
+        accumulator = accumulator << 1;
+      }
+      if (exponent == 1 && (accumulator >> (C_MANTISSA + shift)) == 0) exponent = 0;
+      accumulator = round_to_even_long(accumulator, shift - 1);
+      if (accumulator >> (C_MANTISSA + shift + 1) != 0) exponent += 1;
+      mantissa = (accumulator >> shift) & MAN_MASK;
+    }
+    result |= exponent << C_MANTISSA;
+    result |= (mantissa & MAN_MASK);
+  }
+
   return result;
 }
 
@@ -3393,6 +3520,8 @@ __device__ float custom2float(unsigned int a) {
 }
 
 #define CMUL_FLOATS(a, b) custom2float(__cmul(float2custom(a), float2custom(b)))
+#define CADD_FLOATS(a, b) custom2float(__cadd(float2custom(a), float2custom(b)))
+#define CMAC_FLOATS(a, b, c) __cadd(a, __cmul(float2custom(b), float2custom(c)))
 
 __global__ void VecQuant3MatMulKernelNUQPerChannel_custom(
     const  float* __restrict__ vec,
@@ -3427,7 +3556,7 @@ __global__ void VecQuant3MatMulKernelNUQPerChannel_custom(
   int i = width * row + col;
   int k = 0;
 
-  float res = 0;
+  unsigned int res = 0;
 
   unsigned int tmp1;
   unsigned int tmp2;
@@ -3441,55 +3570,56 @@ __global__ void VecQuant3MatMulKernelNUQPerChannel_custom(
   while (k < BLOCKWIDTH) {
     tmp1 = as_unsigned(mat[i]);
 
-    res += CMUL_FLOATS(deq2[(tmp1 >>  0) & 0x7][k + 0], blockvec[k + 0]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  3) & 0x7][k + 1], blockvec[k + 1]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  6) & 0x7][k + 2], blockvec[k + 2]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  9) & 0x7][k + 3], blockvec[k + 3]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  12) & 0x7][k + 4], blockvec[k + 4]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  15) & 0x7][k + 5], blockvec[k + 5]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  18) & 0x7][k + 6], blockvec[k + 6]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  21) & 0x7][k + 7], blockvec[k + 7]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  24) & 0x7][k + 8], blockvec[k + 8]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  27) & 0x7][k + 9], blockvec[k + 9]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  0) & 0x7][k + 0], blockvec[k + 0]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  3) & 0x7][k + 1], blockvec[k + 1]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  6) & 0x7][k + 2], blockvec[k + 2]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  9) & 0x7][k + 3], blockvec[k + 3]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  12) & 0x7][k + 4], blockvec[k + 4]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  15) & 0x7][k + 5], blockvec[k + 5]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  18) & 0x7][k + 6], blockvec[k + 6]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  21) & 0x7][k + 7], blockvec[k + 7]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  24) & 0x7][k + 8], blockvec[k + 8]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  27) & 0x7][k + 9], blockvec[k + 9]);
 
     i += width;
     tmp2 = as_unsigned(mat[i]);
     tmp = (tmp1 >> 30) | ((tmp2 << 2) & 0x4);
     tmp2 >>= 1;
-    res += CMUL_FLOATS(deq2[(tmp >>  0) & 0x7][k + 10], blockvec[k + 10]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  0) & 0x7][k + 10], blockvec[k + 10]);
     k += 11;
-    res += CMUL_FLOATS(deq2[(tmp2 >>  0) & 0x7][k + 0], blockvec[k + 0]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  3) & 0x7][k + 1], blockvec[k + 1]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  6) & 0x7][k + 2], blockvec[k + 2]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  9) & 0x7][k + 3], blockvec[k + 3]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  12) & 0x7][k + 4], blockvec[k + 4]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  15) & 0x7][k + 5], blockvec[k + 5]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  18) & 0x7][k + 6], blockvec[k + 6]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  21) & 0x7][k + 7], blockvec[k + 7]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  24) & 0x7][k + 8], blockvec[k + 8]);
-    res += CMUL_FLOATS(deq2[(tmp2 >>  27) & 0x7][k + 9], blockvec[k + 9]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  0) & 0x7][k + 0], blockvec[k + 0]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  3) & 0x7][k + 1], blockvec[k + 1]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  6) & 0x7][k + 2], blockvec[k + 2]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  9) & 0x7][k + 3], blockvec[k + 3]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  12) & 0x7][k + 4], blockvec[k + 4]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  15) & 0x7][k + 5], blockvec[k + 5]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  18) & 0x7][k + 6], blockvec[k + 6]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  21) & 0x7][k + 7], blockvec[k + 7]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  24) & 0x7][k + 8], blockvec[k + 8]);
+    res = CMAC_FLOATS(res, deq2[(tmp2 >>  27) & 0x7][k + 9], blockvec[k + 9]);
 
     i += width;
     tmp1 = as_unsigned(mat[i]);
     tmp = (tmp2 >> 30) | ((tmp1 << 1) & 0x6);
     tmp1 >>= 2;
-    res += CMUL_FLOATS(deq2[(tmp >>  0) & 0x7][k + 10], blockvec[k + 10]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  0) & 0x7][k + 10], blockvec[k + 10]);
     k += 11;
-    res += CMUL_FLOATS(deq2[(tmp1 >>  0) & 0x7][k + 0], blockvec[k + 0]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  3) & 0x7][k + 1], blockvec[k + 1]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  6) & 0x7][k + 2], blockvec[k + 2]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  9) & 0x7][k + 3], blockvec[k + 3]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  12) & 0x7][k + 4], blockvec[k + 4]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  15) & 0x7][k + 5], blockvec[k + 5]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  18) & 0x7][k + 6], blockvec[k + 6]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  21) & 0x7][k + 7], blockvec[k + 7]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  24) & 0x7][k + 8], blockvec[k + 8]);
-    res += CMUL_FLOATS(deq2[(tmp1 >>  27) & 0x7][k + 9], blockvec[k + 9]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  0) & 0x7][k + 0], blockvec[k + 0]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  3) & 0x7][k + 1], blockvec[k + 1]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  6) & 0x7][k + 2], blockvec[k + 2]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  9) & 0x7][k + 3], blockvec[k + 3]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  12) & 0x7][k + 4], blockvec[k + 4]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  15) & 0x7][k + 5], blockvec[k + 5]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  18) & 0x7][k + 6], blockvec[k + 6]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  21) & 0x7][k + 7], blockvec[k + 7]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  24) & 0x7][k + 8], blockvec[k + 8]);
+    res = CMAC_FLOATS(res, deq2[(tmp1 >>  27) & 0x7][k + 9], blockvec[k + 9]);
     i += width;
     k += 10;
   }
 
-  atomicAdd(&mul[col], res);
+  float res2 = custom2float(res);
+  atomicAdd(&mul[col], res2);
 }
 
 //4-bit per-channel
@@ -3520,7 +3650,7 @@ __global__ void VecQuant4MatMulKernelNUQPerChannel_custom(
 
   __syncthreads();
 
-  float res = 0;
+  unsigned int res = 0;
   int i = width * row + col;
   int k = 0;
 
@@ -3529,20 +3659,21 @@ __global__ void VecQuant4MatMulKernelNUQPerChannel_custom(
   while (k < BLOCKWIDTH) {
     tmp = as_unsigned(mat[i]);
 
-    res += CMUL_FLOATS(deq2[(tmp >>  0) & 0xf][k + 0], blockvec[k + 0]);
-    res += CMUL_FLOATS(deq2[(tmp >>  4) & 0xf][k + 1], blockvec[k + 1]);
-    res += CMUL_FLOATS(deq2[(tmp >>  8) & 0xf][k + 2], blockvec[k + 2]);
-    res += CMUL_FLOATS(deq2[(tmp >>  12) & 0xf][k + 3], blockvec[k + 3]);
-    res += CMUL_FLOATS(deq2[(tmp >>  16) & 0xf][k + 4], blockvec[k + 4]);
-    res += CMUL_FLOATS(deq2[(tmp >>  20) & 0xf][k + 5], blockvec[k + 5]);
-    res += CMUL_FLOATS(deq2[(tmp >>  24) & 0xf][k + 6], blockvec[k + 6]);
-    res += CMUL_FLOATS(deq2[(tmp >>  28) & 0xf][k + 7], blockvec[k + 7]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  0) & 0xf][k + 0], blockvec[k + 0]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  4) & 0xf][k + 1], blockvec[k + 1]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  8) & 0xf][k + 2], blockvec[k + 2]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  12) & 0xf][k + 3], blockvec[k + 3]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  16) & 0xf][k + 4], blockvec[k + 4]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  20) & 0xf][k + 5], blockvec[k + 5]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  24) & 0xf][k + 6], blockvec[k + 6]);
+    res = CMAC_FLOATS(res, deq2[(tmp >>  28) & 0xf][k + 7], blockvec[k + 7]);
 
     i += width;
     k += 8;
   }
 
-  atomicAdd(&mul[col], res);
+  float res2 = custom2float(res);
+  atomicAdd(&mul[col], res2);
 }
 
 
@@ -3573,7 +3704,7 @@ __global__ void VecQuant3MatMulKernelNUQPerChannelBatched_custom(
   }
 
   int i;
-  float res;
+  unsigned int res;
   int k;
 
   unsigned int tmp1;
@@ -3593,55 +3724,56 @@ __global__ void VecQuant3MatMulKernelNUQPerChannelBatched_custom(
     while (k < BLOCKWIDTH) {
       tmp1 = as_unsigned(mat[i]);
 
-      res += CMUL_FLOATS(deq2[(tmp1 >>  0) & 0x7][k + 0], blockvec[k + 0]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  3) & 0x7][k + 1], blockvec[k + 1]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  6) & 0x7][k + 2], blockvec[k + 2]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  9) & 0x7][k + 3], blockvec[k + 3]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  12) & 0x7][k + 4], blockvec[k + 4]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  15) & 0x7][k + 5], blockvec[k + 5]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  18) & 0x7][k + 6], blockvec[k + 6]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  21) & 0x7][k + 7], blockvec[k + 7]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  24) & 0x7][k + 8], blockvec[k + 8]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  27) & 0x7][k + 9], blockvec[k + 9]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  0) & 0x7][k + 0], blockvec[k + 0]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  3) & 0x7][k + 1], blockvec[k + 1]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  6) & 0x7][k + 2], blockvec[k + 2]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  9) & 0x7][k + 3], blockvec[k + 3]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  12) & 0x7][k + 4], blockvec[k + 4]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  15) & 0x7][k + 5], blockvec[k + 5]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  18) & 0x7][k + 6], blockvec[k + 6]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  21) & 0x7][k + 7], blockvec[k + 7]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  24) & 0x7][k + 8], blockvec[k + 8]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  27) & 0x7][k + 9], blockvec[k + 9]);
 
       i += width;
       tmp2 = as_unsigned(mat[i]);
       tmp = (tmp1 >> 30) | ((tmp2 << 2) & 0x4);
       tmp2 >>= 1;
-      res += CMUL_FLOATS(deq2[(tmp >>  0) & 0x7][k + 10], blockvec[k + 10]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  0) & 0x7][k + 10], blockvec[k + 10]);
       k += 11;
-      res += CMUL_FLOATS(deq2[(tmp2 >>  0) & 0x7][k + 0], blockvec[k + 0]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  3) & 0x7][k + 1], blockvec[k + 1]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  6) & 0x7][k + 2], blockvec[k + 2]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  9) & 0x7][k + 3], blockvec[k + 3]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  12) & 0x7][k + 4], blockvec[k + 4]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  15) & 0x7][k + 5], blockvec[k + 5]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  18) & 0x7][k + 6], blockvec[k + 6]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  21) & 0x7][k + 7], blockvec[k + 7]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  24) & 0x7][k + 8], blockvec[k + 8]);
-      res += CMUL_FLOATS(deq2[(tmp2 >>  27) & 0x7][k + 9], blockvec[k + 9]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  0) & 0x7][k + 0], blockvec[k + 0]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  3) & 0x7][k + 1], blockvec[k + 1]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  6) & 0x7][k + 2], blockvec[k + 2]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  9) & 0x7][k + 3], blockvec[k + 3]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  12) & 0x7][k + 4], blockvec[k + 4]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  15) & 0x7][k + 5], blockvec[k + 5]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  18) & 0x7][k + 6], blockvec[k + 6]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  21) & 0x7][k + 7], blockvec[k + 7]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  24) & 0x7][k + 8], blockvec[k + 8]);
+      res = CMAC_FLOATS(res, deq2[(tmp2 >>  27) & 0x7][k + 9], blockvec[k + 9]);
 
       i += width;
       tmp1 = as_unsigned(mat[i]);
       tmp = (tmp2 >> 30) | ((tmp1 << 1) & 0x6);
       tmp1 >>= 2;
-      res += CMUL_FLOATS(deq2[(tmp >>  0) & 0x7][k + 10], blockvec[k + 10]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  0) & 0x7][k + 10], blockvec[k + 10]);
       k += 11;
-      res += CMUL_FLOATS(deq2[(tmp1 >>  0) & 0x7][k + 0], blockvec[k + 0]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  3) & 0x7][k + 1], blockvec[k + 1]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  6) & 0x7][k + 2], blockvec[k + 2]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  9) & 0x7][k + 3], blockvec[k + 3]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  12) & 0x7][k + 4], blockvec[k + 4]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  15) & 0x7][k + 5], blockvec[k + 5]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  18) & 0x7][k + 6], blockvec[k + 6]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  21) & 0x7][k + 7], blockvec[k + 7]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  24) & 0x7][k + 8], blockvec[k + 8]);
-      res += CMUL_FLOATS(deq2[(tmp1 >>  27) & 0x7][k + 9], blockvec[k + 9]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  0) & 0x7][k + 0], blockvec[k + 0]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  3) & 0x7][k + 1], blockvec[k + 1]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  6) & 0x7][k + 2], blockvec[k + 2]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  9) & 0x7][k + 3], blockvec[k + 3]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  12) & 0x7][k + 4], blockvec[k + 4]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  15) & 0x7][k + 5], blockvec[k + 5]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  18) & 0x7][k + 6], blockvec[k + 6]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  21) & 0x7][k + 7], blockvec[k + 7]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  24) & 0x7][k + 8], blockvec[k + 8]);
+      res = CMAC_FLOATS(res, deq2[(tmp1 >>  27) & 0x7][k + 9], blockvec[k + 9]);
       i += width;
       k += 10;
     }
 
-    atomicAdd(&mul[b * width + col], res);
+    float res2 = custom2float(res);
+    atomicAdd(&mul[b * width + col], res2);
   }
 }
 
@@ -3671,7 +3803,7 @@ __global__ void VecQuant4MatMulKernelNUQPerChannelBatched_custom(
   }
 
   int i;
-  float res;
+  unsigned int res;
   int k;
   unsigned int tmp;
 
@@ -3687,20 +3819,21 @@ __global__ void VecQuant4MatMulKernelNUQPerChannelBatched_custom(
     while (k < BLOCKWIDTH) {
       tmp = as_unsigned(mat[i]);
 
-      res += CMUL_FLOATS(deq2[(tmp >>  0) & 0xf][k + 0], blockvec[k + 0]);
-      res += CMUL_FLOATS(deq2[(tmp >>  4) & 0xf][k + 1], blockvec[k + 1]);
-      res += CMUL_FLOATS(deq2[(tmp >>  8) & 0xf][k + 2], blockvec[k + 2]);
-      res += CMUL_FLOATS(deq2[(tmp >>  12) & 0xf][k + 3], blockvec[k + 3]);
-      res += CMUL_FLOATS(deq2[(tmp >>  16) & 0xf][k + 4], blockvec[k + 4]);
-      res += CMUL_FLOATS(deq2[(tmp >>  20) & 0xf][k + 5], blockvec[k + 5]);
-      res += CMUL_FLOATS(deq2[(tmp >>  24) & 0xf][k + 6], blockvec[k + 6]);
-      res += CMUL_FLOATS(deq2[(tmp >>  28) & 0xf][k + 7], blockvec[k + 7]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  0) & 0xf][k + 0], blockvec[k + 0]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  4) & 0xf][k + 1], blockvec[k + 1]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  8) & 0xf][k + 2], blockvec[k + 2]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  12) & 0xf][k + 3], blockvec[k + 3]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  16) & 0xf][k + 4], blockvec[k + 4]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  20) & 0xf][k + 5], blockvec[k + 5]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  24) & 0xf][k + 6], blockvec[k + 6]);
+      res = CMAC_FLOATS(res, deq2[(tmp >>  28) & 0xf][k + 7], blockvec[k + 7]);
 
       i += width;
       k += 8;
     }
 
-    atomicAdd(&mul[b * width + col], res);
+    float res2 = custom2float(res);
+    atomicAdd(&mul[b * width + col], res2);
   }
 }
 
@@ -3715,13 +3848,14 @@ __global__ void SPMV_ATOMIC_custom(
 ) {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     if (row < num_rows) {
-        float dot = 0;
+        unsigned int dot = 0;
         int start_elem = rows[row];
         int end_elem = rows[row+1];
         for (int i = start_elem; i < end_elem; i++) {
-            dot += CMUL_FLOATS(mat[i], vec[cols[i]]);
+            dot = CMAC_FLOATS(dot, mat[i], vec[cols[i]]);
         }
-        atomicAdd(&mul[row], dot);
+        float dot2 = custom2float(dot);
+        atomicAdd(&mul[row], dot2);
     }
 }
 
@@ -3775,17 +3909,18 @@ __global__ void DenseMatVecKernel_custom(
 
   int i = width * row + col;
   int k = 0;
-  float res = 0;
+  unsigned int res = 0;
 
   if (threadIdx.x < width) {
     while (k < BLOCKWIDTH) {
-      res += CMUL_FLOATS(full_rows[i], blockvec[k]);
+      res = CMAC_FLOATS(res, full_rows[i], blockvec[k]);
       k += 1;
       i += width;
     }
 
     int col_idx = full_row_indices[col];
-    atomicAdd(&mul[col_idx], res);
+    float res2 = custom2float(res);
+    atomicAdd(&mul[col_idx], res2);
   }
 }
 
@@ -3811,7 +3946,7 @@ __global__ void DenseMatVecKernelBatched_custom(
   for (int b = 0; b < batch; ++b){
     int i = width * row + col;
     int k = 0;
-    float res = 0;
+    unsigned int res = 0;
 
     __syncthreads();
     blockvec[threadIdx.x] = vec[b * vec_height + row + threadIdx.x];
@@ -3819,13 +3954,14 @@ __global__ void DenseMatVecKernelBatched_custom(
 
     if (threadIdx.x < width) {
       while (k < BLOCKWIDTH) {
-        res += CMUL_FLOATS(full_rows[i], blockvec[k]);
+        res = CMAC_FLOATS(res, full_rows[i], blockvec[k]);
         k += 1;
         i += width;
       }
 
       int col_idx = full_row_indices[col];
-      atomicAdd(&mul[b * matwidth + col_idx], res);
+      float res2 = custom2float(res);
+      atomicAdd(&mul[b * matwidth + col_idx], res2);
     }
   }
 }
