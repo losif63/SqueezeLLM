@@ -351,7 +351,6 @@ class QuantLinearLUT(nn.Module):
                     elif precision == "custom":
                         quant_cuda.vecquant4matmul_nuq_perchannel_custom(x, self.qweight, y, self.lookup_table)
             y = y.to(dtype)
-            print(y)
             return y.reshape(outshape)
         else:
             out_shape = x.shape[:-1] + (self.outfeatures, )
@@ -557,7 +556,6 @@ class QuantLinearLUT(nn.Module):
             out = out.to(dtype)
             out = out.reshape(out_shape)
             out = out + self.bias if self.bias is not None else out
-            print(out)
             return out
 
 # function to iterate through model layers and replace with our LUT-based layer
